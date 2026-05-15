@@ -269,26 +269,34 @@ class PartiallyBlindBanditAgent(BaseAgent):
         product_idx: int,
         inventories: dict[int, np.ndarray],
     ) -> float:
-        """Estimate P_i(t) = max_o E[C_{i,o} | K_o]  (Eq. 9)."""
-        max_price = 0.0
+        """Estimate P_i(t) = max_o E[C_{i,o} | K_o]  (Eq. 9).
+
+        During warm-up (< 2 samples) returns ``-inf`` so the Lyapunov rule
+        always triggers and the agent bids its threshold price.  This avoids
+        the arbitrary hard-coded default that caused systematic under-bidding
+        for low-price products like beef.
+        """
+        preds = []
         for o in self.competitor_ids:
             if o not in inventories:
                 continue
             model = self.models[product_idx][o]
             if model.n_samples < 2:
-                # Not enough data yet — use a conservative default
-                # (bid high so we don't miss essentials early on)
-                pred = 50.0
-            else:
-                pred = model.predict(inventories[o])
-            max_price = max(max_price, pred)
-        return max_price
+                # Return -inf: Lyapunov rule will trigger and bid = threshold
+                return -np.inf
+            preds.append(model.predict(inventories[o]))
+        return max(preds) if preds else -np.inf
 
     # ── core bidding logic ─────────────────────────────────────────────
     def bid(self, state: AuctionState) -> np.ndarray:
         """Bid using estimated market prices + Lyapunov rule.
 
         Eq. 10:  b_i = P_i(t) + ε   (if Lyapunov triggers)
+
+        When OLS is in warm-up (_estimate_market_price returns -inf),
+        estimated_price < threshold is always True so the agent bids
+        its own Lyapunov threshold directly, guaranteeing participation
+        while learning.
         """
         bids_out = np.zeros(self.n_products)
         H = self.inventory_deficit(self.beta)
@@ -298,17 +306,18 @@ class PartiallyBlindBanditAgent(BaseAgent):
             if q_i <= 0:
                 continue
 
-            # Estimate market price from competitors' inventories
-            estimated_price = self._estimate_market_price(
-                i, state.inventories,
-            )
+            estimated_price = self._estimate_market_price(i, state.inventories)
 
             # Lyapunov rule:  buy if  H_i · q_i > V · estimated_price
             threshold = H[i] * q_i / self.V if self.V > 0 else np.inf
 
             if estimated_price < threshold:
-                epsilon = estimated_price * 0.01 + 0.01
-                bids_out[i] = estimated_price + epsilon
+                if np.isneginf(estimated_price):
+                    # Warm-up: bid the threshold itself (agent's max willingness-to-pay)
+                    bids_out[i] = max(threshold, 0.01)
+                else:
+                    epsilon = estimated_price * 0.01 + 0.01
+                    bids_out[i] = estimated_price + epsilon
 
         self.log({
             "t": state.t,

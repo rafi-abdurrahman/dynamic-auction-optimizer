@@ -68,7 +68,22 @@ class AuctionDataGenerator:
         self.daily_data = load_daily(country, auction_fraction=1.0)
         self.depletion_rates = get_depletion_rates(country)
         self.products = list(PRODUCTS)
-        
+
+        # ── normalise to [0, 1000] ────────────────────────────────────────
+        # Compute the per-product max over the *entire* dataset so that the
+        # scale factor is fixed and independent of n_days.  Every yielded
+        # quantity is then in [0, 1000], making alpha/d_max/prices all
+        # comparable across products and countries.
+        _full_max = self.daily_data.max()          # Series, index = products
+        _safe_max = _full_max.clip(lower=1.0)      # avoid div-by-zero
+        # norm_scale[i] = 1000 / max_i
+        self.norm_scale = pd.Series(
+            1000.0 / _safe_max.values,
+            index=_safe_max.index,
+        )
+        # Convenience: per-product mean in normalised units (used by derive_data_stats)
+        self.normed_daily_mean = (self.daily_data.mean() * self.norm_scale).clip(lower=0.0)
+
         # Limit to n_days if specified
         if n_days is not None:
             self.daily_data = self.daily_data.iloc[:n_days]
@@ -134,8 +149,10 @@ class AuctionDataGenerator:
                     # Add Gaussian noise
                     noise = np.random.normal(0, self.noise_std * auction_qty)
                     noisy_qty = max(0, auction_qty + noise)  # Clamp to non-negative
-                    
-                    quantities[product] = noisy_qty
+
+                    # Normalise to [0, 1000]
+                    scale = float(self.norm_scale.get(product, 1.0))
+                    quantities[product] = noisy_qty * scale
                 
                 yield (date_str, auction_idx, quantities)
     
