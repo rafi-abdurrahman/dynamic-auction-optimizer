@@ -5,6 +5,7 @@ from visualization.plots import (
     plot_win_rate,
     plot_lyapunov_deficit,
     plot_all,
+    plot_ilp_schedule,
 )
 from visualization.regret import (
     compute_oracle_cost,

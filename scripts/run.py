@@ -36,6 +36,7 @@ if str(ROOT) not in sys.path:
 
 from agents.base import N_PRODUCTS, PRODUCTS
 from agents.ours.bandit import AllSeeingBanditAgent, PartiallyBlindBanditAgent
+from agents.ours.ilp_solver import ILPOracleAgent, solve_ilp_offline
 from env.sim import AuctionSimulation
 from tools.helper_run import (
     build_competitors,
@@ -153,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ── scenario ──────────────────────────────────────────────────────
     p.add_argument(
         "--mode",
-        choices=["all_seeing", "partially_blind"],
+        choices=["all_seeing", "partially_blind", "ilp"],
         default="all_seeing",
         help="Which of our agent types to use.",
     )
@@ -369,8 +370,11 @@ def main(args: argparse.Namespace) -> None:
         agents_to_run = [("All-Seeing", agent_as), ("Partially-Blind", agent_pb)]
     elif args.mode == "all_seeing":
         agents_to_run = [("All-Seeing", agent_as)]
-    else:
+    elif args.mode == "partially_blind":
         agents_to_run = [("Partially-Blind", agent_pb)]
+    elif args.mode == "ilp":
+        # ILP agent is built after _build_sim is defined (needs pre-roll).
+        agents_to_run = []
 
     # ── pre-generate the price/quantity sequence (shared across both agents) ─
     # We pre-roll the sim with a dummy agent to collect the environment
@@ -443,6 +447,64 @@ def main(args: argparse.Namespace) -> None:
             default_depletions=d_max * 0.5,
             seed=args.seed,
         )
+
+    # ── ILP: pre-roll competitors, solve, build agent ─────────────────
+    if args.mode == "ilp":
+        print("  [ilp] Pre-rolling competitors to collect market prices ...")
+
+        # Null agent that never bids (does not influence competitor behaviour).
+        from agents.base import BaseAgent as _BaseAgent
+
+        class _NullAgent(_BaseAgent):
+            """Agent that never bids.  Used solely for price collection."""
+            def bid(self, state):
+                return np.zeros(self.n_products)
+
+        null_agent = _NullAgent(
+            agent_id=0,
+            alpha=alpha,
+            initial_inventory=init_inv.copy(),
+        )
+        preroll_sim = _build_sim(null_agent)
+        preroll_results = preroll_sim.run(args.n_rounds)
+
+        prices_mat = np.array([
+            [r.winning_bids[i] for i in range(N_PRODUCTS)]
+            for r in preroll_results
+        ])  # (T, N)
+        qtys_mat = np.array([r.quantities for r in preroll_results])   # (T, N)
+        deps_mat = np.array([r.depletions for r in preroll_results])   # (T, N)
+
+        # Replace zero prices with a nominal epsilon.
+        prices_mat = np.where(prices_mat <= 0, 1e-6, prices_mat)
+
+        print(f"  [ilp] Collected {args.n_rounds} rounds of market data.")
+        print(f"  [ilp] Solving ILP ({N_PRODUCTS} products x {args.n_rounds} rounds) ...")
+
+        x_opt, ilp_cost, feasibility = solve_ilp_offline(
+            prices=prices_mat,
+            quantities=qtys_mat,
+            depletions=deps_mat,
+            alpha=alpha,
+            initial_inventory=init_inv,
+        )
+
+        for i, prod in enumerate(PRODUCTS):
+            status = "feasible" if feasibility[i] else "INFEASIBLE (fallback)"
+            buys = int(x_opt[:, i].sum())
+            print(f"    {prod:15s}: {buys:3d}/{args.n_rounds} buys  [{status}]")
+        print(f"  [ilp] Optimal total cost: {ilp_cost:,.2f}")
+
+        agent_ilp = ILPOracleAgent(
+            agent_id=0,
+            alpha=alpha,
+            initial_inventory=init_inv.copy(),
+            x_opt=x_opt,
+            prices=prices_mat,
+            ilp_total_cost=ilp_cost,
+            feasibility=feasibility,
+        )
+        agents_to_run = [("ILP", agent_ilp)]
 
     # ════════════════════════════════════════════════════════════════════
     #  RUN LOOP  — iterate over agent(s)
@@ -529,19 +591,30 @@ def main(args: argparse.Namespace) -> None:
 
         # ── per-agent dashboard (always when --plot) ─────────────────
         if args.plot:
-            from visualization.plots import plot_all
-            # In compare mode use agent-specific filename; single mode → dashboard.png
-            dash_name = (
-                f"dashboard_{run_label.lower().replace(' ', '-')}.png"
-                if args.compare else "dashboard.png"
-            )
-            plot_all(
-                sim.results,
-                our_agent=our_agent,
-                products=list(PRODUCTS),
-                save_path=str(_rp(run_dir, dash_name.removesuffix(".png"), ".png")),
-                show=False,
-            )
+            if isinstance(our_agent, ILPOracleAgent):
+                # ILP-specific: binary heatmap + inventory trace.
+                from visualization.plots import plot_ilp_schedule
+                plot_ilp_schedule(
+                    x_opt=our_agent.schedule,
+                    results=sim.results,
+                    alpha=alpha,
+                    products=list(PRODUCTS),
+                    save_path=str(_rp(run_dir, "ilp_schedule", ".png")),
+                )
+            else:
+                from visualization.plots import plot_all
+                # In compare mode use agent-specific filename; single mode -> dashboard.png
+                dash_name = (
+                    f"dashboard_{run_label.lower().replace(' ', '-')}.png"
+                    if args.compare else "dashboard.png"
+                )
+                plot_all(
+                    sim.results,
+                    our_agent=our_agent,
+                    products=list(PRODUCTS),
+                    save_path=str(_rp(run_dir, dash_name.removesuffix(".png"), ".png")),
+                    show=False,
+                )
 
         # ── structured summary from sim ──────────────────────────────
         summary_path = _rp(run_dir, f"summary_{run_label.lower().replace(' ', '_')}", ".txt")

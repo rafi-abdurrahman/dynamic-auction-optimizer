@@ -347,3 +347,122 @@ def plot_all(
     if show:
         plt.show()
     return fig
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  7. ILP Schedule Heatmap + Inventory Trace
+# ════════════════════════════════════════════════════════════════════════
+
+def plot_ilp_schedule(
+    x_opt: np.ndarray,
+    results: list,
+    alpha: np.ndarray,
+    products: Sequence[str] = DEFAULT_PRODUCTS,
+    our_agent_id: int = 0,
+    save_path: str | None = None,
+    show: bool = False,
+) -> Figure:
+    """Visualize the ILP optimal purchasing schedule.
+
+    Produces a two-panel figure:
+      - **Top**: Binary heatmap of x_opt (T x N) showing exactly when each
+        product is purchased.
+      - **Bottom**: Per-product inventory trace with alpha reference lines,
+        showing how the optimal schedule maintains the hard constraint.
+
+    Parameters
+    ----------
+    x_opt : np.ndarray, shape (T, N), dtype int
+        Binary decision matrix from ``solve_ilp_offline``.
+    results : list[RoundResult]
+        Simulation results from replaying the ILP schedule.
+    alpha : np.ndarray, shape (N,)
+        Hard minimum inventory constraint per product.
+    products : sequence of str
+        Product names for labelling.
+    our_agent_id : int
+        Agent identifier used to extract inventories from results.
+    save_path : str | None
+        If provided, save figure to this path.
+    show : bool
+        Call ``plt.show()`` after rendering.
+
+    Returns
+    -------
+    Figure
+    """
+    from matplotlib.colors import ListedColormap
+
+    T, N = x_opt.shape
+    fig, (ax_heat, ax_inv) = plt.subplots(
+        2, 1, figsize=(14, 7),
+        gridspec_kw={"height_ratios": [1, 2]},
+        sharex=True,
+    )
+    fig.suptitle(
+        "ILP Optimal Schedule (Section IV-A)",
+        fontsize=13, fontweight="bold", y=0.98,
+    )
+
+    # ── Top panel: binary purchase heatmap ──────────────────────────────
+    cmap = ListedColormap(["#f0f0f0", "#2b8cbe"])
+    ax_heat.imshow(
+        x_opt.T,
+        aspect="auto",
+        cmap=cmap,
+        interpolation="nearest",
+        extent=[0, T, N - 0.5, -0.5],
+    )
+
+    ax_heat.set_yticks(range(N))
+    ax_heat.set_yticklabels(products[:N], fontsize=9)
+    ax_heat.set_title(
+        "Purchase decisions  (dark = buy, light = skip)",
+        fontsize=10,
+    )
+
+    # Annotate total buys per product on the right margin.
+    for i in range(N):
+        total_buys = int(x_opt[:, i].sum())
+        ax_heat.text(
+            T + 0.5, i, f"{total_buys}/{T}",
+            va="center", ha="left", fontsize=8, color="#333333",
+        )
+
+    ax_heat.grid(False)
+
+    # ── Bottom panel: inventory trace ───────────────────────────────────
+    t_ax = np.arange(T)
+    for i, prod in enumerate(products[:N]):
+        inv = [r.inventories_after[our_agent_id][i] for r in results]
+        color = _PALETTE[i % len(_PALETTE)]
+        ax_inv.plot(t_ax, inv, label=prod, color=color, linewidth=1.8)
+        ax_inv.axhline(
+            alpha[i], color=color,
+            linestyle="--", linewidth=0.9, alpha=0.6,
+        )
+
+    ax_inv.set_xlabel("Round (t)")
+    ax_inv.set_ylabel("Inventory")
+    ax_inv.set_title(
+        "Inventory trajectory under ILP schedule  [-- alpha constraint]",
+        fontsize=10,
+    )
+    ax_inv.legend(loc="upper right", fontsize=8)
+    ax_inv.yaxis.set_major_formatter(
+        mticker.FuncFormatter(lambda x, _: f"{x:,.0f}")
+    )
+    ax_inv.grid(True, alpha=0.3)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+    if save_path is not None:
+        from pathlib import Path
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  [viz] ILP schedule plot saved -> {save_path}")
+
+    if show:
+        plt.show()
+    return fig
+
