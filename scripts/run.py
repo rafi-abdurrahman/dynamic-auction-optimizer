@@ -506,12 +506,14 @@ def main(args: argparse.Namespace) -> None:
 
         safe_bids = np.where(bid_counts > 0, bid_counts, 1.0)
         win_rate  = np.where(bid_counts > 0, win_counts / safe_bids, 0.0)
+        rounds_won_any = sum(1 for r in sim.results if np.any(r.our_won))
 
         print()
         print("=" * 60)
         print(f"  SUMMARY — {run_label}")
         print("=" * 60)
         print(f"  Rounds simulated     : {args.n_rounds}")
+        print(f"  Rounds won (any)     : {rounds_won_any} ({rounds_won_any / args.n_rounds * 100:.1f}%)")
         print(f"  Total cost           : {total_cost:.2f}")
         print(f"  Avg cost / round     : {total_cost / args.n_rounds:.2f}")
         print(f"  Constraint violations: {violations} "
@@ -576,6 +578,7 @@ def main(args: argparse.Namespace) -> None:
             alpha=alpha,
             initial_inventory=init_inv,
             products=list(PRODUCTS),
+            V=args.V,
             save_path=str(_rp(run_dir, "regret", ".png")),
             show=False,
         )

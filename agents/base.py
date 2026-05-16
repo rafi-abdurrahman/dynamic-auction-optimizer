@@ -131,6 +131,7 @@ class BaseAgent(ABC):
         """
         if beta is None:
             beta = self.alpha
+        
         return beta - self.inventory
 
     def __repr__(self) -> str:

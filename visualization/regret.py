@@ -342,6 +342,7 @@ def compare_and_plot_regret(
     violation_penalty: float | None = None,
     save_path: str | None = None,
     show: bool = True,
+    V: float = 2.0,
 ) -> Figure:
     """Compute oracle baseline once, then plot penalised regret for both algorithms.
 
@@ -349,22 +350,6 @@ def compare_and_plot_regret(
     trajectory) and used as a shared baseline for both agents.
     Violation penalties are shared (λ = max market price across both runs)
     so the comparison is fair.
-
-    Parameters
-    ----------
-    results_all_seeing : list[RoundResult]
-    results_partially_blind : list[RoundResult]
-    alpha : np.ndarray
-    initial_inventory : np.ndarray
-    products : sequence of str
-    violation_penalty : float | None
-        Override λ.  If None, derived automatically as max market price.
-    save_path : str | None
-    show : bool
-
-    Returns
-    -------
-    Figure
     """
     print("  [regret] Computing clairvoyant oracle via LP …")
     oracle_costs = compute_oracle_cost(
@@ -390,17 +375,92 @@ def compare_and_plot_regret(
     print(f"  [regret] All-Seeing final regret     : {regret_as[-1]:,.2f}")
     print(f"  [regret] Partially-Blind final regret: {regret_pb[-1]:,.2f}")
 
-    runs = [
-        ("All-Seeing",      regret_as, results_all_seeing),
-        ("Partially-Blind", regret_pb, results_partially_blind),
-    ]
-    return plot_regret(
-        runs,
-        products=products,
-        theoretical_bound=True,
-        save_path=save_path,
-        show=show,
+    T = len(regret_as)
+    t_ax = np.arange(1, T + 1)
+    
+    # Extract dimensions for PB bound
+    N = len(alpha)
+    M = len(results_partially_blind[0].all_bids) - 1 if len(results_partially_blind) > 0 else 3
+    d = N
+    
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    ax_as, ax_pb, ax_loss = axes
+    
+    # ── 1) All-Seeing ───────────────────────────────────────────────
+    ax_as.plot(t_ax, regret_as, label="All-Seeing", color=_PALETTE[0], linewidth=2.2)
+    ax_as.fill_between(t_ax, regret_as, alpha=0.08, color=_PALETTE[0])
+    
+    mid_as = max(regret_as[T // 2], 1.0)
+    as_shape = (t_ax / V) + V
+    scale_as = mid_as / as_shape[T // 2]
+    ref_as = scale_as * as_shape
+    ax_as.plot(t_ax, ref_as, "k--", linewidth=1.2, alpha=0.5, label=r"$O(T/V + V)$ reference")
+    
+    ax_as.set_xlabel("Round (t)")
+    ax_as.set_ylabel("Cumulative regret")
+    ax_as.set_title("All-Seeing Regret vs Oracle")
+    ax_as.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+    ax_as.legend(fontsize=9)
+    ax_as.grid(True, alpha=0.3)
+    
+    # ── 2) Partially-Blind ──────────────────────────────────────────
+    ax_pb.plot(t_ax, regret_pb, label="Partially-Blind", color=_PALETTE[1], linewidth=2.2)
+    ax_pb.fill_between(t_ax, regret_pb, alpha=0.08, color=_PALETTE[1])
+    
+    log_factor = d + np.log(max(N * M, 1))
+    pb_shape = np.sqrt(t_ax * log_factor)
+    mid_pb = max(regret_pb[T // 2], 1.0)
+    scale_pb = mid_pb / max(pb_shape[T // 2], 1e-9)
+    ref_pb = scale_pb * pb_shape
+    
+    pb_lbl = (
+        r"$O\!\left(N K_{{\rm max}}\sqrt{{T(d+\log NM)}}\right)$"
+        "\n"
+        r"[Partially-Blind §12, $N$=" + str(N) + r"$,M$=" + str(M) + r"$,d$=" + str(d) + "]"
     )
+    
+    ax_pb.plot(t_ax, ref_pb, color="#2ca02c", linestyle="-.", linewidth=1.2, alpha=0.6, label=pb_lbl)
+    
+    ax_pb.set_xlabel("Round (t)")
+    ax_pb.set_ylabel("Cumulative regret")
+    ax_pb.set_title("Partially-Blind Regret vs Oracle")
+    ax_pb.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+    ax_pb.legend(fontsize=9)
+    ax_pb.grid(True, alpha=0.3)
+    
+    # ── 3) Bid Loss (Partially Blind) ──────────────────────────────────
+    # bid loss = our_bid - market_price (only plotted when we bid > 0)
+    our_agent_id = 0
+    bid_losses = np.zeros((T, N))
+    for t_idx, r in enumerate(results_partially_blind):
+        our_bid = r.all_bids.get(our_agent_id, np.zeros(N))
+        market_price = r.winning_bids
+        loss = our_bid - market_price
+        bid_losses[t_idx, :] = np.where(our_bid > 0, loss, np.nan)
+        
+    for i, prod in enumerate(products):
+        # We add marker='.' so isolated rounds where we bid are still visible
+        ax_loss.plot(t_ax, bid_losses[:, i], label=prod, color=_PALETTE[i % len(_PALETTE)], 
+                     alpha=0.8, marker=".", markersize=4, linestyle="-")
+        
+    ax_loss.axhline(0, color="k", linestyle=":", linewidth=1.2)
+    ax_loss.set_xlabel("Round (t)")
+    ax_loss.set_ylabel("Bid Loss (Bid - Market Price)")
+    ax_loss.set_title("Partially-Blind Bid Loss Per Round")
+    ax_loss.legend(fontsize=9)
+    ax_loss.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+
+    if save_path is not None:
+        from pathlib import Path
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  [viz] Regret plot saved → {save_path}")
+
+    if show:
+        plt.show()
+    return fig
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -444,7 +504,7 @@ def plot_convergence_dashboard(
 
     Reference lines drawn on Plots 1 & 2
     ─────────────────────────────────────
-    Black dashed : O(√T) — All-Seeing Lyapunov bound (§5.3)
+    Black dashed : O((T/V) + V) — All-Seeing Lyapunov bound (§5.3)
 
     Green dashed : O(N·K_max·√(T·(d+log(NM)))) — Partially-Blind OLS bound (§12)
         This is the dominant term for the PB agent under online OLS:
@@ -480,7 +540,8 @@ def plot_convergence_dashboard(
         fontsize=13, fontweight="bold",
     )
 
-    ref_sqrt = ref_cv = scale_cr = scale_cv = t_ax = None   # set on first pass
+    V_val = V if V is not None else 2.0
+    ref_as = ref_cv = scale_cr = scale_cv = t_ax = None   # set on first pass
     # Find the PB run index (label contains "Blind") to scale the PB reference
     pb_regret_mid = None
 
@@ -493,13 +554,14 @@ def plot_convergence_dashboard(
         avg_viol   = cum_viol   / t_ax
         avg_regret = cum_regret / t_ax
 
-        # Scale O(√T) reference to ALL-SEEING curve midpoint (first run)
+        # Scale O(T/V + V) reference to ALL-SEEING curve midpoint (first run)
         if idx == 0:
             mid = max(T // 2, 1)
-            scale_cr = max(abs(float(cum_regret[mid])), 1.0) / np.sqrt(mid)
-            scale_cv = max(float(cum_viol[mid]), 1.0)        / np.sqrt(mid)
-            ref_sqrt = scale_cr * np.sqrt(t_ax)
-            ref_cv   = scale_cv * np.sqrt(t_ax)
+            as_shape = (t_ax / V_val) + V_val
+            scale_cr = max(abs(float(cum_regret[mid])), 1.0) / as_shape[mid]
+            scale_cv = max(float(cum_viol[mid]), 1.0)        / as_shape[mid]
+            ref_as = scale_cr * as_shape
+            ref_cv   = scale_cv * as_shape
 
         # Capture PB curve midpoint for PB reference scaling
         if "blind" in label.lower() or (len(runs) == 1):
@@ -515,12 +577,15 @@ def plot_convergence_dashboard(
         ax4.plot(t_ax, avg_viol,   **kw); ax4.fill_between(t_ax, avg_viol,   **fkw)
 
     # ── Reference lines on Plots 1 & 2 ─────────────────────────────────
-    # O(√T) — All-Seeing Lyapunov (§5.3)
+    # O((T/V) + V) — All-Seeing Lyapunov (§5.3)
     as_kw = dict(color="black", linestyle="--", linewidth=1.2, alpha=0.5)
-    ax1.plot(t_ax, ref_sqrt,
-             **as_kw, label=r"$O(\sqrt{T})$  [All-Seeing §5.3]")
-    ax2.plot(t_ax, scale_cr / np.sqrt(t_ax),
-             **as_kw, label=r"$O(1/\sqrt{T})$  [All-Seeing §5.3]")
+    ax1.plot(t_ax, ref_as,
+             **as_kw, label=r"$O(T/V + V)$  [All-Seeing §5.3]")
+    
+    # Average regret bound is (T/V + V)/t = 1/V + V/t
+    avg_as_shape = (1.0 / V_val) + (V_val / t_ax)
+    ax2.plot(t_ax, scale_cr * avg_as_shape,
+             **as_kw, label=r"$O((1/V) + V/t)$  [All-Seeing §5.3]")
 
     # O(N·Kmax·√(T·(d+log(NM)))) — Partially-Blind OLS (§12)
     #   Shape: √(T·(d + log(NM)))  =  √(d+log(NM)) · √T  (still O(√T) but larger constant)

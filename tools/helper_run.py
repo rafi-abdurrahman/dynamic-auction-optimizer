@@ -7,6 +7,7 @@ Extracted here to keep run.py focused on CLI definition and the game loop.
 from __future__ import annotations
 
 from typing import Iterator
+from pathlib import Path
 
 import numpy as np
 
@@ -169,3 +170,79 @@ def derive_data_stats(
     d_max    = d_rate * alpha
 
     return mean_qty, d_max, alpha
+
+
+def _rp(run_dir: Path, stem: str, suffix: str = ".txt") -> Path:
+    """Return ``run_dir/stem+suffix``.  run_dir must already exist."""
+    return run_dir / f"{stem}{suffix}"
+
+
+def write_summary(
+    path: Path,
+    ts: str,
+    run_label: str,
+    sim,
+    args,
+    alpha: "np.ndarray",
+    d_max: "np.ndarray",
+    init_inv: "np.ndarray",
+    products,
+) -> None:
+    """Write a structured summary file built directly from sim.summary().
+
+    Unlike capturing stdout, this pulls data from the simulation object so
+    the file is always accurate regardless of console verbosity settings.
+    """
+    stats = sim.summary()
+    lines = []
+    W = 60
+
+    lines += [
+        "=" * W,
+        f"  AUCTION SIMULATION SUMMARY",
+        f"  Timestamp  : {ts}",
+        f"  Mode       : {run_label}",
+        "=" * W,
+        "",
+        "── Configuration " + "─" * (W - 17),
+        f"  n_rounds         : {args.n_rounds}",
+        f"  V (Lyapunov)     : {args.V}",
+        f"  a (scale)        : {args.a}",
+        f"  d_rate           : {args.d_rate}",
+        f"  competitors      : {args.competitors}",
+        f"  seed             : {args.seed}",
+        f"  mode             : {args.mode}",
+        "",
+        "── Resolved Parameters " + "─" * (W - 22),
+    ]
+
+    # Per-product table: alpha, d_max, init_inv
+    lines.append(
+        f"  {'Product':15s}  {'alpha':>12}  {'d_max':>12}  {'init_inv':>12}"
+    )
+    lines.append("  " + "-" * 55)
+    for i, prod in enumerate(products):
+        lines.append(
+            f"  {prod:15s}  {alpha[i]:12.2f}  {d_max[i]:12.2f}  {init_inv[i]:12.2f}"
+        )
+
+    lines += [
+        "",
+        "── Simulation Results " + "─" * (W - 21),
+        f"  Rounds simulated     : {stats.get('n_rounds', 0)}",
+        f"  Rounds won (any)     : {stats.get('rounds_won', 0)} ({stats.get('rounds_won_percentage', 0) * 100:.1f}%)",
+        f"  Total cost           : {stats.get('total_cost', 0):,.2f}",
+        f"  Avg cost / round     : {stats.get('avg_cost_per_round', 0):,.2f}",
+        f"  Constraint violations: {stats.get('constraint_violations', 0)}"
+        f"  ({stats.get('violation_rate', 0) * 100:.1f}%)",
+        f"  Final inventory      : {[round(v, 2) for v in stats.get('final_inventory', [])]}",
+        "",
+        "── Win Rate per Product " + "─" * (W - 23),
+    ]
+    for prod, wr in zip(products, stats.get("win_rate_per_product", [])):
+        lines.append(f"  {prod:15s}: {wr * 100:6.1f}%")
+
+    lines += ["", "=" * W, ""]
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"  [run] Summary saved → {path}")

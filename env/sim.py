@@ -319,9 +319,12 @@ class AuctionSimulation:
         # Win rate per product
         win_counts = np.zeros(self.n_products)
         bid_counts = np.zeros(self.n_products)
+        rounds_won = 0
         for r in self.results:
             win_counts += r.our_won.astype(float)
             bid_counts += (r.all_bids[self.our_agent.agent_id] > 0).astype(float)
+            if np.any(r.our_won):
+                rounds_won += 1
 
         safe_bid_counts = np.where(bid_counts > 0, bid_counts, 1.0)
         win_rate = np.where(bid_counts > 0, win_counts / safe_bid_counts, 0.0)
@@ -337,6 +340,8 @@ class AuctionSimulation:
             "total_cost": total_cost,
             "avg_cost_per_round": total_cost / n_rounds,
             "win_rate_per_product": win_rate.tolist(),
+            "rounds_won": rounds_won,
+            "rounds_won_percentage": rounds_won / n_rounds,
             "constraint_violations": violations,
             "violation_rate": violations / n_rounds,
             "final_inventory": self.our_agent.inventory.tolist(),

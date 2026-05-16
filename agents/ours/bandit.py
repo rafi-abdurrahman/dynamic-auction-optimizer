@@ -81,6 +81,7 @@ class AllSeeingBanditAgent(BaseAgent):
 
         # H_i(t) = β_i − s_i(t)
         H = self.inventory_deficit(self.beta)
+        H_max = self.beta - self.alpha
 
         for i in range(self.n_products):
             q_i = state.quantities[i]
