@@ -153,7 +153,22 @@ the EUROSTAT-derived `mean_qty` as the default lot size.
 
 ## Usage
 
-### Basic run
+### Interactive Dashboard (Recommended)
+
+The easiest way to explore the simulation is via the interactive Streamlit dashboard:
+
+```bash
+streamlit run app.py
+```
+
+This launches a web UI where you can:
+- Switch between agents: **All-Seeing**, **Partially-Blind**, **ILP (Theoretical)**, and **ILP (Static Plan)**.
+- Tune hyperparameters (`T`, `V`, `a`, `d_rate`) with immediate visual feedback.
+- Inspect the **Results Overview** with interactive Plotly charts (Inventory, Cost, Win Rates, Lyapunov Deficits).
+- Drill down into specific rounds using the **Round Inspector** to see exact bids and quantities.
+- View the binary heatmap schedule in the **ILP Schedule** tab.
+
+### CLI Basic run
 
 ```bash
 # All-Seeing, 150 rounds (results auto-saved to results/)
@@ -185,7 +200,8 @@ python -m scripts.run --mode all_seeing --use_real_data --country DE --n_rounds 
 
 ```
 Scenario
-  --mode          all_seeing | partially_blind      (default: all_seeing)
+  --mode          all_seeing | partially_blind | ilp_theoretical | ilp_static_plan
+                  (default: all_seeing)
   --compare       Run both modes, produce regret plot
   --n_rounds INT  Number of auction rounds           (default: 150)
 
@@ -250,7 +266,9 @@ Every run creates timestamped files in `results/` automatically:
   milk_dairy :  94.7%  ...
 ```
 
-### Dashboard panels
+### CLI Static Dashboard panels (`--plot`)
+
+If using the CLI instead of Streamlit, the `--plot` flag generates a static PNG:
 
 | Position | Plot |
 |---|---|

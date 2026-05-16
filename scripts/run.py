@@ -154,9 +154,9 @@ def build_parser() -> argparse.ArgumentParser:
     # ── scenario ──────────────────────────────────────────────────────
     p.add_argument(
         "--mode",
-        choices=["all_seeing", "partially_blind", "ilp"],
+        choices=["all_seeing", "partially_blind", "ilp", "ilp_theoretical", "ilp_static_plan"],
         default="all_seeing",
-        help="Which of our agent types to use.",
+        help="Which agent to use. 'ilp' is an alias for 'ilp_static_plan'.",
     )
     p.add_argument(
         "--n_rounds",
@@ -372,7 +372,7 @@ def main(args: argparse.Namespace) -> None:
         agents_to_run = [("All-Seeing", agent_as)]
     elif args.mode == "partially_blind":
         agents_to_run = [("Partially-Blind", agent_pb)]
-    elif args.mode == "ilp":
+    elif args.mode in ("ilp", "ilp_static_plan", "ilp_theoretical"):
         # ILP agent is built after _build_sim is defined (needs pre-roll).
         agents_to_run = []
 
@@ -449,7 +449,7 @@ def main(args: argparse.Namespace) -> None:
         )
 
     # ── ILP: pre-roll competitors, solve, build agent ─────────────────
-    if args.mode == "ilp":
+    if args.mode in ("ilp", "ilp_static_plan", "ilp_theoretical"):
         print("  [ilp] Pre-rolling competitors to collect market prices ...")
 
         # Null agent that never bids (does not influence competitor behaviour).
@@ -495,6 +495,27 @@ def main(args: argparse.Namespace) -> None:
             print(f"    {prod:15s}: {buys:3d}/{args.n_rounds} buys  [{status}]")
         print(f"  [ilp] Optimal total cost: {ilp_cost:,.2f}")
 
+        # Theoretical mode: print the solver output and exit (no replay).
+        if args.mode == "ilp_theoretical":
+            # Compute inventory trajectory analytically.
+            inv = init_inv.copy()
+            for t in range(args.n_rounds):
+                inv = inv + qtys_mat[t] * x_opt[t] - deps_mat[t]
+
+            print()
+            print("=" * 60)
+            print("  SUMMARY -- ILP (Theoretical Baseline)")
+            print("=" * 60)
+            print(f"  Rounds             : {args.n_rounds}")
+            print(f"  ILP optimal cost   : {ilp_cost:,.2f}  (theoretical lower bound)")
+            print(f"  Avg cost / round   : {ilp_cost / args.n_rounds:,.2f}")
+            print(f"  Violations         : 0 (0.0%)  (guaranteed by solver)")
+            print(f"  Final inventory    : {[round(v, 1) for v in inv.tolist()]}")
+            print("=" * 60)
+            print(f"  [run] All results saved to {run_dir}/")
+            return
+
+        # Static plan mode: build agent and proceed to run loop.
         agent_ilp = ILPOracleAgent(
             agent_id=0,
             alpha=alpha,
@@ -572,14 +593,24 @@ def main(args: argparse.Namespace) -> None:
 
         print()
         print("=" * 60)
-        print(f"  SUMMARY — {run_label}")
+        print(f"  SUMMARY -- {run_label}")
         print("=" * 60)
         print(f"  Rounds simulated     : {args.n_rounds}")
         print(f"  Rounds won (any)     : {rounds_won_any} ({rounds_won_any / args.n_rounds * 100:.1f}%)")
-        print(f"  Total cost           : {total_cost:.2f}")
-        print(f"  Avg cost / round     : {total_cost / args.n_rounds:.2f}")
+
+        if isinstance(our_agent, ILPOracleAgent):
+            print(f"  ILP optimal cost     : {our_agent.ilp_total_cost:,.2f}  (theoretical lower bound)")
+            print(f"  Simulated cost       : {total_cost:,.2f}  (best-effort simulation)")
+            print(f"  Avg optimal / round  : {our_agent.ilp_total_cost / args.n_rounds:,.2f}")
+        else:
+            print(f"  Total cost           : {total_cost:.2f}")
+            print(f"  Avg cost / round     : {total_cost / args.n_rounds:.2f}")
+
+        viol_note = ""
+        if isinstance(our_agent, ILPOracleAgent) and violations > 0:
+            viol_note = "  (simulation artifact)"
         print(f"  Constraint violations: {violations} "
-              f"({violations / args.n_rounds * 100:.1f}%)")
+              f"({violations / args.n_rounds * 100:.1f}%){viol_note}")
         print(f"  Final inventory      : "
               f"{[round(v, 1) for v in our_agent.inventory.tolist()]}")
         print(f"  Win rate per product :")

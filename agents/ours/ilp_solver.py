@@ -278,6 +278,7 @@ class ILPOracleAgent(BaseAgent):
         if t < self._T:
             for i in range(self.n_products):
                 if self._x_opt[t, i] == 1:
+                    # Bid the pre-roll market price + epsilon.
                     price = self._prices[t, i]
                     epsilon = price * 0.01 + 0.01
                     bids_out[i] = price + epsilon
