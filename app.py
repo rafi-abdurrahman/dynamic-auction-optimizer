@@ -27,7 +27,7 @@ from agents.ours.bandit import AllSeeingBanditAgent, PartiallyBlindBanditAgent
 from agents.ours.ilp_solver import ILPOracleAgent, solve_ilp_offline
 from env.sim import AuctionSimulation
 from tools.helper_run import build_competitors, derive_data_stats
-from visualization.regret import compute_oracle_cost, compute_regret, plot_convergence_dashboard
+from visualization.regret import compute_oracle_cost, compute_regret, plot_regret_vs_theory
 
 # ── constants ───────────────────────────────────────────────────────────
 SEED = 42
@@ -586,7 +586,7 @@ def main() -> None:
     alpha = data["alpha"]
 
     # ── tabs ──────────────────────────────────────────────────────────────────
-    tab_names = ["Results Overview", "Round Inspector", "Convergence Analysis"]
+    tab_names = ["Results Overview", "Round Inspector"]
     is_ilp = mode.startswith("ilp")
 
     tabs = st.tabs(tab_names)
@@ -694,6 +694,33 @@ def main() -> None:
         st.markdown("---")
         st.plotly_chart(chart_bid_vs_market_price(results), width="stretch", key="overview_bids_vs_market")
 
+        # Regret plot
+        if mode != "ilp_theoretical":
+            st.markdown("---")
+            st.markdown("### Average Regret per Round")
+            with st.spinner("Computing clairvoyant oracle baseline (LP relaxation)..."):
+                try:
+                    oracle_costs = compute_oracle_cost(results, alpha, data["init_inv"])
+                    all_prices = [r.winning_bids for r in results]
+                    violation_penalty = float(np.max(all_prices)) if all_prices else 1.0
+                    violation_penalty = max(violation_penalty, 1.0)
+                    cum_regret, _ = compute_regret(
+                        results, oracle_costs, alpha,
+                        violation_penalty=violation_penalty,
+                    )
+                    fig_regret = plot_regret_vs_theory(
+                        runs=[(mode_label, results, cum_regret)],
+                        alpha=alpha,
+                        V=V if not is_ilp else 2.0,
+                        n_products=len(alpha),
+                        n_competitors=len(competitor_opts),
+                        context_dim=len(alpha),
+                        show=False,
+                    )
+                    st.pyplot(fig_regret)
+                except Exception as e:
+                    st.error(f"Error generating regret plot: {e}")
+
     # ── Tab 2: Round Inspector (all modes) ────────────────────────────
     with tabs[1]:
         T = len(results)
@@ -771,40 +798,6 @@ def main() -> None:
             **_plotly_template(),
         )
         st.plotly_chart(fig_snap, width="stretch", key="round_inventory")
-
-    # ── Tab 3: Convergence Analysis ───────────────────────────────────
-    with tabs[2]:
-        st.markdown("### Convergence & Regret Analysis")
-        st.markdown("This dashboard compares the agent's performance against the clairvoyant ILP oracle over time.")
-        
-        if mode == "ilp_theoretical":
-            st.info("Convergence analysis is not applicable for the theoretical ILP baseline since it is the oracle itself.")
-        else:
-            with st.spinner("Computing clairvoyant oracle baseline (LP relaxation)..."):
-                try:
-                    oracle_costs = compute_oracle_cost(results, alpha, data["init_inv"])
-                    # Use the same shared penalty logic as run.py
-                    all_prices = [r.winning_bids for r in results]
-                    violation_penalty = float(np.max(all_prices)) if all_prices else 1.0
-                    violation_penalty = max(violation_penalty, 1.0)
-                    
-                    cum_regret, _ = compute_regret(
-                        results, oracle_costs, alpha, violation_penalty=violation_penalty
-                    )
-                    
-                    # Plotly doesn't natively support this dashboard, but we can render the matplotlib one
-                    fig_conv = plot_convergence_dashboard(
-                        runs=[(mode, results, cum_regret)],
-                        alpha=alpha, V=V if not is_ilp else 2.0,
-                        n_products=len(alpha),
-                        n_competitors=len(competitor_opts),
-                        context_dim=len(alpha),
-                        show=False
-                    )
-                    st.pyplot(fig_conv)
-                except Exception as e:
-                    st.error(f"Error generating convergence dashboard: {e}")
-
 
 
 if __name__ == "__main__":

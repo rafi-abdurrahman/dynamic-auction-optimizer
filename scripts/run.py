@@ -661,71 +661,44 @@ def main(args: argparse.Namespace) -> None:
             products=list(PRODUCTS),
         )
 
-    # ── regret plot + convergence (--plot with --compare) ─────────────
-    if args.plot and args.compare:
+    # ── regret plot (--plot, single or compare mode) ──────────────────
+    if args.plot:
         from visualization.regret import (
+            compute_oracle_cost, compute_regret, plot_regret_vs_theory,
             compare_and_plot_regret,
-            compute_oracle_cost, compute_regret, plot_convergence_dashboard,
         )
 
-        if len(all_run_results) == 2:
+        if args.compare and len(all_run_results) >= 2:
             _lbl_as, results_as, _agent_as = all_run_results[0]
             _lbl_pb, results_pb, _agent_pb = all_run_results[1]
+            compare_and_plot_regret(
+                results_all_seeing=results_as,
+                results_partially_blind=results_pb,
+                alpha=alpha,
+                initial_inventory=init_inv,
+                products=list(PRODUCTS),
+                V=args.V,
+                n_competitors=len(competitors),
+                save_path=str(_rp(run_dir, "regret", ".png")),
+                show=False,
+            )
         else:
-            _lbl_as, results_as, _agent_as = all_run_results[0]
-            _lbl_pb, results_pb, _agent_pb = all_run_results[0]
+            regret_runs = []
+            for _lbl, _res, _agent in all_run_results:
+                _oracle = compute_oracle_cost(_res, alpha, init_inv)
+                _regret, _ = compute_regret(_res, _oracle, alpha)
+                regret_runs.append((_lbl, _res, _regret))
 
-        # Regret comparison plot
-        compare_and_plot_regret(
-            results_all_seeing=results_as,
-            results_partially_blind=results_pb,
-            alpha=alpha,
-            initial_inventory=init_inv,
-            products=list(PRODUCTS),
-            V=args.V,
-            save_path=str(_rp(run_dir, "regret", ".png")),
-            show=False,
-        )
-
-        # 4-panel convergence dashboard
-        conv_runs = []
-        for _lbl, _res, _agent in all_run_results:
-            _oracle = compute_oracle_cost(_res, alpha, init_inv)
-            _regret, _ = compute_regret(_res, _oracle, alpha)
-            conv_runs.append((_lbl, _res, _regret))
-
-        plot_convergence_dashboard(
-            runs=conv_runs,
-            alpha=alpha,
-            V=args.V,
-            n_products=N_PRODUCTS,
-            n_competitors=len(competitors),
-            context_dim=N_PRODUCTS,
-            save_path=str(_rp(run_dir, "convergence", ".png")),
-            show=False,
-        )
-
-    elif args.plot and not args.compare:
-        # Single-mode convergence (no regret comparison, but still show conv)
-        from visualization.regret import (
-            compute_oracle_cost, compute_regret, plot_convergence_dashboard,
-        )
-        conv_runs = []
-        for _lbl, _res, _agent in all_run_results:
-            _oracle = compute_oracle_cost(_res, alpha, init_inv)
-            _regret, _ = compute_regret(_res, _oracle, alpha)
-            conv_runs.append((_lbl, _res, _regret))
-
-        plot_convergence_dashboard(
-            runs=conv_runs,
-            alpha=alpha,
-            V=args.V,
-            n_products=N_PRODUCTS,
-            n_competitors=len(competitors),
-            context_dim=N_PRODUCTS,
-            save_path=str(_rp(run_dir, "convergence", ".png")),
-            show=False,
-        )
+            plot_regret_vs_theory(
+                runs=regret_runs,
+                alpha=alpha,
+                V=args.V,
+                n_products=N_PRODUCTS,
+                n_competitors=len(competitors),
+                context_dim=N_PRODUCTS,
+                save_path=str(_rp(run_dir, "regret", ".png")),
+                show=False,
+            )
 
     print(f"  [run] All results saved to {run_dir}/")
 

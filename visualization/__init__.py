@@ -10,7 +10,6 @@ from visualization.plots import (
 from visualization.regret import (
     compute_oracle_cost,
     compute_regret,
-    plot_regret,
+    plot_regret_vs_theory,
     compare_and_plot_regret,
-    plot_convergence_dashboard,
 )
