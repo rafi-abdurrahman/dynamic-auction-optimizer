@@ -1,5 +1,4 @@
-"""
-Helper functions for scripts/run.py.
+"""Helper functions for scripts/run.py.
 
 Extracted here to keep run.py focused on CLI definition and the game loop.
 """
@@ -19,8 +18,6 @@ from agents.competitors.competitors import (
 from agents.base import N_PRODUCTS
 
 
-# ── competitor factory ──────────────────────────────────────────────────
-
 def build_competitors(
     spec: str,
     alpha: np.ndarray,
@@ -29,27 +26,13 @@ def build_competitors(
 ) -> list:
     """Parse a comma-separated competitor spec and instantiate agents.
 
-    Parameters
-    ----------
-    spec : str
-        Comma-separated competitor types, e.g. ``"stochastic,linear,naive"``.
-        Each token must be one of: ``stochastic`` | ``random`` | ``linear`` | ``naive``.
-    alpha : np.ndarray
-        Hard minimum inventory constraint passed to each competitor.
-    init_inv : np.ndarray
-        Starting inventory for each competitor.
-    seed : int
-        Base random seed; each competitor receives ``seed + idx + 1``.
-
-    Returns
-    -------
-    list[BaseAgent]
-        Instantiated competitor agents with ids starting at 1 (our agent is 0).
+    Each token must be one of: stochastic | random | linear | naive.
+    Agent ids start at 1 (our agent is always 0).
     """
     competitors = []
     for idx, name in enumerate(spec.split(",")):
         name = name.strip().lower()
-        agent_id  = idx + 1          # our agent is id=0
+        agent_id   = idx + 1
         agent_seed = seed + idx + 1
 
         if name in ("stochastic", "random"):
@@ -87,14 +70,8 @@ def build_competitors(
     return competitors
 
 
-# ── data iterators ──────────────────────────────────────────────────────
-
 def quantity_iter_from_generator(gen) -> Iterator[np.ndarray]:
-    """Yield per-auction quantity vectors (shape N,) from AuctionDataGenerator.
-
-    Maps the generator's product dict into the canonical product order
-    ``('milk', 'eggs', 'poultry', 'beef')`` used by the agents.
-    """
+    """Yield per-auction quantity vectors from AuctionDataGenerator in canonical product order."""
     _ORDER = ("milk", "eggs", "poultry", "beef")
     for _date, _auction_idx, quantities_dict in gen.generate():
         vec = np.array(
@@ -111,8 +88,6 @@ def depletion_iter(depletion_rates: np.ndarray, n: int) -> Iterator[np.ndarray]:
         yield depletion_rates.copy()
 
 
-# ── EUROSTAT stats ──────────────────────────────────────────────────────
-
 def derive_data_stats(
     country: str,
     auctions_per_day: int,
@@ -123,35 +98,12 @@ def derive_data_stats(
     """Load EUROSTAT data and compute per-auction quantity statistics.
 
     Parameters derive as follows (all values in normalised [0, 1000] units):
-
         mean_qty = normed_daily_mean ÷ auctions_per_day
-        alpha    = a      × mean_qty   (hard inventory safety stock)
-        d_max    = d_rate × alpha      (max per-auction depletion)
+        alpha    = a      × mean_qty
+        d_max    = d_rate × alpha
 
-    Quantities from AuctionDataGenerator are normalised per-product to
-    [0, 1000] (1000 = historical max).  derive_data_stats reads
-    ``gen.normed_daily_mean`` so alpha and d_max live in the same unit
-    space as the auction lots.
-
-    Parameters
-    ----------
-    country : str
-        ISO-2 EUROSTAT country code (e.g. ``"DE"``).
-    auctions_per_day : int
-        Number of auction slots per calendar day.
-    auction_fraction : float
-        Unused (kept for API compatibility; generator uses auction_fraction=1.0
-        internally and normalises to [0, 1000]).
-    a : float
-        Scale factor in (0, 1].  Sets ``alpha = a × mean_qty``.
-    d_rate : float
-        Depletion rate in (0, 1].  Sets ``d_max = d_rate × alpha``.
-
-    Returns
-    -------
-    mean_qty : np.ndarray, shape (4,)   normalised tonnes per auction slot
-    d_max    : np.ndarray, shape (4,)   = d_rate × alpha
-    alpha    : np.ndarray, shape (4,)   = a × mean_qty
+    auction_fraction is unused but kept for API compatibility.
+    Returns (mean_qty, d_max, alpha).
     """
     from datagen.generate_data import AuctionDataGenerator
 
@@ -160,7 +112,7 @@ def derive_data_stats(
     gen = AuctionDataGenerator(country=country, auctions_per_day=auctions_per_day)
     # normed_daily_mean is in [0, 1000] units; divide by auctions_per_day
     # to get the per-slot mean quantity.
-    normed_mean = gen.normed_daily_mean  # pd.Series, index = products
+    normed_mean = gen.normed_daily_mean
 
     def _get(series, key, fallback):
         return float(series[key]) if key in series.index else fallback
@@ -173,7 +125,6 @@ def derive_data_stats(
 
 
 def _rp(run_dir: Path, stem: str, suffix: str = ".txt") -> Path:
-    """Return ``run_dir/stem+suffix``.  run_dir must already exist."""
     return run_dir / f"{stem}{suffix}"
 
 
@@ -188,11 +139,7 @@ def write_summary(
     init_inv: "np.ndarray",
     products,
 ) -> None:
-    """Write a structured summary file built directly from sim.summary().
-
-    Unlike capturing stdout, this pulls data from the simulation object so
-    the file is always accurate regardless of console verbosity settings.
-    """
+    """Write a structured summary file built directly from sim.summary()."""
     stats = sim.summary()
     lines = []
     W = 60
@@ -216,7 +163,6 @@ def write_summary(
         "── Resolved Parameters " + "─" * (W - 22),
     ]
 
-    # Per-product table: alpha, d_max, init_inv
     lines.append(
         f"  {'Product':15s}  {'alpha':>12}  {'d_max':>12}  {'init_inv':>12}"
     )

@@ -1,5 +1,4 @@
-"""
-Streamlit dashboard for the Inventory-Constrained Dynamic Bidding simulation.
+"""Streamlit dashboard for the Inventory-Constrained Dynamic Bidding simulation.
 
 Launch with:
     streamlit run app.py
@@ -17,7 +16,6 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
 
-# ── project root on sys.path ────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -29,7 +27,6 @@ from env.sim import AuctionSimulation
 from tools.helper_run import build_competitors, derive_data_stats
 from visualization.regret import compute_oracle_cost, compute_regret, plot_regret_vs_theory
 
-# ── constants ───────────────────────────────────────────────────────────
 SEED = 42
 PRODUCT_COLORS = {
     "milk_dairy": "#4C72B0",
@@ -45,10 +42,6 @@ MODE_LABELS = {
 }
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  Simulation Runner
-# ════════════════════════════════════════════════════════════════════════
-
 @st.cache_data(show_spinner="Running simulation...")
 def run_simulation(
     mode: str,
@@ -59,36 +52,9 @@ def run_simulation(
     country: str,
     competitor_spec: str,
 ) -> dict:
-    """Run the auction simulation and return all data needed by the dashboard.
-
-    Parameters
-    ----------
-    mode : str
-        One of ``"all_seeing"``, ``"partially_blind"``, ``"ilp_theoretical"``,
-        ``"ilp_static_plan"``.
-    n_rounds, V, a, d_rate : float
-        Hyperparameters.
-    country : str
-        ISO-2 EUROSTAT country code.
-    competitor_spec : str
-        Comma-separated competitor types.
-
-    Returns
-    -------
-    dict with keys:
-        results    : list[RoundResult]
-        summary    : dict from sim.summary()
-        agent      : BaseAgent instance
-        alpha      : np.ndarray (N,)
-        d_max      : np.ndarray (N,)
-        init_inv   : np.ndarray (N,)
-        x_opt      : np.ndarray (T,N) or None  (ILP only)
-        ilp_cost   : float or None              (ILP only)
-        feasibility: list[bool] or None         (ILP only)
-    """
+    """Run the auction simulation and return all data needed by the dashboard."""
     np.random.seed(SEED)
 
-    # ── derive parameters ─────────────────────────────────────────────
     _FALLBACK_ALPHA = np.array([10.0, 5.0, 10.0, 15.0])
     _FALLBACK_DMAX = np.array([3.0, 2.0, 3.0, 4.0])
 
@@ -105,11 +71,9 @@ def run_simulation(
     alpha = data_alpha
     init_inv = alpha + d_max  # = beta, so H_i(0) = 0
 
-    # ── competitors ───────────────────────────────────────────────────
     competitors = build_competitors(competitor_spec, alpha, init_inv, SEED)
     competitor_ids = [c.agent_id for c in competitors]
 
-    # ── simulation builder ────────────────────────────────────────────
     def _build_sim(agent):
         _competitors = build_competitors(competitor_spec, alpha, init_inv, SEED)
         _default_qty = (
@@ -125,7 +89,6 @@ def run_simulation(
             seed=SEED,
         )
 
-    # ── ILP pre-roll (shared by both ILP modes) ────────────────────────
     x_opt_out = None
     ilp_cost_out = None
     feasibility_out = None
@@ -163,19 +126,16 @@ def run_simulation(
         ilp_cost_out = ilp_cost
         feasibility_out = feasibility
 
-    # ── ILP Theoretical: analytical computation, no simulation ────────
     if mode == "ilp_theoretical":
-        # Compute inventory trajectory analytically.
         inv_trajectory = np.zeros((n_rounds + 1, N_PRODUCTS))
         inv_trajectory[0] = init_inv.copy()
         per_round_cost = np.zeros(n_rounds)
 
         for t in range(n_rounds):
-            purchased = qtys_mat[t] * x_opt[t]  # q_i(t) * x_i(t)
+            purchased = qtys_mat[t] * x_opt[t]
             per_round_cost[t] = float(prices_mat[t] @ x_opt[t])
             inv_trajectory[t + 1] = inv_trajectory[t] + purchased - deps_mat[t]
 
-        # Build a synthetic summary dict matching sim.summary() keys.
         total_cost = float(ilp_cost)
         summary = {
             "total_cost": total_cost,
@@ -189,7 +149,6 @@ def run_simulation(
             ],
         }
 
-        # Build synthetic RoundResult-like dicts for chart compatibility.
         from types import SimpleNamespace
         results = []
         for t in range(n_rounds):
@@ -197,7 +156,7 @@ def run_simulation(
                 t=t,
                 quantities=qtys_mat[t],
                 depletions=deps_mat[t],
-                all_bids={0: prices_mat[t] * x_opt[t]},  # our "bid" = price if buying
+                all_bids={0: prices_mat[t] * x_opt[t]},
                 winners=np.where(x_opt[t] == 1, 0, -1).astype(int),
                 winning_bids=prices_mat[t] * x_opt[t],
                 our_cost=per_round_cost[t],
@@ -217,7 +176,6 @@ def run_simulation(
             "feasibility": feasibility_out,
         }
 
-    # ── ILP Static Plan: build agent and run through simulation ───────
     if mode == "ilp_static_plan":
         agent = ILPOracleAgent(
             agent_id=0, alpha=alpha, initial_inventory=init_inv.copy(),
@@ -252,10 +210,6 @@ def run_simulation(
     }
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  Chart Builders
-# ════════════════════════════════════════════════════════════════════════
-
 def _plotly_template() -> dict:
     """Shared Plotly layout defaults."""
     return dict(
@@ -285,7 +239,6 @@ def chart_inventory(results: list, alpha: np.ndarray) -> go.Figure:
             line=dict(color=color, width=2),
             showlegend=False
         ), row=i+1, col=1)
-        
         fig.add_hline(
             y=float(alpha[i]), line_dash="dash",
             line_color=color, opacity=0.5,
@@ -296,11 +249,7 @@ def chart_inventory(results: list, alpha: np.ndarray) -> go.Figure:
             row=i+1, col=1
         )
 
-    fig.update_layout(
-        title="Inventory Over Time",
-        height=650,
-        **_plotly_template(),
-    )
+    fig.update_layout(title="Inventory Over Time", height=650, **_plotly_template())
     fig.update_xaxes(title_text="Round", row=len(PRODUCTS), col=1)
     return fig
 
@@ -313,7 +262,6 @@ def chart_cumulative_cost(results: list) -> go.Figure:
     cum_cost = np.cumsum(per_round).tolist()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
     fig.add_trace(
         go.Scatter(
             x=t_ax, y=cum_cost, name="Cumulative",
@@ -323,18 +271,11 @@ def chart_cumulative_cost(results: list) -> go.Figure:
         secondary_y=False,
     )
     fig.add_trace(
-        go.Bar(
-            x=t_ax, y=per_round, name="Per-round",
-            marker_color="#DD8452", opacity=0.45,
-        ),
+        go.Bar(x=t_ax, y=per_round, name="Per-round",
+               marker_color="#DD8452", opacity=0.45),
         secondary_y=True,
     )
-
-    fig.update_layout(
-        title="Cost Over Time",
-        xaxis_title="Round",
-        **_plotly_template(),
-    )
+    fig.update_layout(title="Cost Over Time", xaxis_title="Round", **_plotly_template())
     fig.update_yaxes(title_text="Cumulative cost", secondary_y=False)
     fig.update_yaxes(title_text="Per-round cost", secondary_y=True)
     return fig
@@ -350,7 +291,6 @@ def chart_win_rate(results: list) -> go.Figure:
 
     safe = np.where(bid_counts > 0, bid_counts, 1.0)
     rates = np.where(bid_counts > 0, win_counts / safe * 100, 0.0)
-
     colors = [PRODUCT_COLORS[p] for p in PRODUCTS]
 
     fig = go.Figure(go.Bar(
@@ -400,11 +340,11 @@ def chart_bid_vs_market_price(results: list) -> go.Figure:
         shared_xaxes=True,
         vertical_spacing=0.15
     )
-    
+
     for i, prod in enumerate(PRODUCTS):
         row = (i // 2) + 1
         col = (i % 2) + 1
-        
+
         t_ax, our_bids, market = [], [], []
         for r in results:
             ob = float(r.all_bids[0][i])
@@ -413,22 +353,19 @@ def chart_bid_vs_market_price(results: list) -> go.Figure:
                 t_ax.append(r.t)
                 our_bids.append(ob)
                 market.append(mp)
-                
+
         if t_ax:
-            # Market price line
             fig.add_trace(go.Scatter(
-                x=t_ax, y=market, name="Market price", 
+                x=t_ax, y=market, name="Market price",
                 mode="lines", line=dict(color="#55A868", width=1.5),
-                legendgroup="market", showlegend=(i==0)
+                legendgroup="market", showlegend=(i == 0)
             ), row=row, col=col)
-            
-            # Our bid scatter
             fig.add_trace(go.Scatter(
-                x=t_ax, y=our_bids, name="Our bid", 
+                x=t_ax, y=our_bids, name="Our bid",
                 mode="markers", marker=dict(color="#4C72B0", size=6),
-                legendgroup="our", showlegend=(i==0)
+                legendgroup="our", showlegend=(i == 0)
             ), row=row, col=col)
-            
+
     fig.update_layout(
         title="Our Bid vs Market Price (when bidding > 0)",
         height=500,
@@ -443,21 +380,17 @@ def chart_round_bids(results: list, t: int) -> go.Figure:
     """Grouped bar chart comparing all bidders at round t."""
     r = results[t]
     agent_ids = sorted(r.all_bids.keys())
-
-    agent_labels = {}
-    for aid in agent_ids:
-        if aid == 0:
-            agent_labels[aid] = "Our Agent"
-        else:
-            agent_labels[aid] = f"Competitor {aid}"
+    agent_labels = {
+        aid: ("Our Agent" if aid == 0 else f"Competitor {aid}")
+        for aid in agent_ids
+    }
 
     fig = go.Figure()
     for aid in agent_ids:
-        bids = r.all_bids[aid]
         fig.add_trace(go.Bar(
             name=agent_labels[aid],
             x=list(PRODUCTS),
-            y=bids.tolist(),
+            y=r.all_bids[aid].tolist(),
         ))
 
     fig.update_layout(
@@ -469,10 +402,6 @@ def chart_round_bids(results: list, t: int) -> go.Figure:
     )
     return fig
 
-
-# ════════════════════════════════════════════════════════════════════════
-#  Streamlit App
-# ════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     st.set_page_config(
@@ -515,7 +444,6 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # ── sidebar ───────────────────────────────────────────────────────
     with st.sidebar:
         st.title("Simulation Parameters")
 
@@ -537,7 +465,7 @@ def main() -> None:
                           min_value=0.1, max_value=10.0, value=2.0, step=0.1,
                           help="Higher V = more cost-conscious, lower V = more inventory-safe.")
         else:
-            V = 2.0  # unused for ILP modes
+            V = 2.0
 
         a = st.slider("a (safety-stock scale)",
                       min_value=0.1, max_value=1.0, value=0.5, step=0.05,
@@ -547,7 +475,7 @@ def main() -> None:
                            min_value=0.1, max_value=1.0, value=0.5, step=0.05,
                            help="d_max = d_rate * alpha. Lower = more rounds of runway.")
 
-        country = "DE"  # fixed to EUROSTAT Germany dataset
+        country = "DE"
 
         competitor_opts = st.multiselect(
             "Competitors",
@@ -559,7 +487,6 @@ def main() -> None:
         st.divider()
         run_btn = st.button("Run Simulation", type="primary", width="stretch")
 
-    # ── run simulation ────────────────────────────────────────────────
     if "sim_data" not in st.session_state:
         st.session_state.sim_data = None
 
@@ -572,7 +499,6 @@ def main() -> None:
 
     data = st.session_state.sim_data
 
-    # ── title ─────────────────────────────────────────────────────────
     st.title("Inventory-Constrained Dynamic Bidding")
     st.caption("Simulation dashboard for Lyapunov-optimized auction strategies")
 
@@ -585,15 +511,12 @@ def main() -> None:
     agent = data["agent"]
     alpha = data["alpha"]
 
-    # ── tabs ──────────────────────────────────────────────────────────────────
     tab_names = ["Results Overview", "Round Inspector"]
     is_ilp = mode.startswith("ilp")
 
     tabs = st.tabs(tab_names)
 
-    # ── Tab 1: Results Overview ───────────────────────────────────────
     with tabs[0]:
-        # Metric cards
         col1, col2, col3, col4 = st.columns(4)
 
         # For ILP mode, the primary cost is the solver's analytical output
@@ -669,7 +592,6 @@ def main() -> None:
 
         st.markdown("---")
 
-        # Charts row 1
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(chart_inventory(results, alpha),
@@ -678,7 +600,6 @@ def main() -> None:
             st.plotly_chart(chart_cumulative_cost(results),
                            width="stretch", key="overview_cost")
 
-        # Charts row 2
         c3, c4 = st.columns(2)
         with c3:
             st.plotly_chart(chart_win_rate(results),
@@ -690,11 +611,9 @@ def main() -> None:
             else:
                 st.info("Lyapunov deficit is not applicable for ILP mode.")
 
-        # Charts row 3
         st.markdown("---")
         st.plotly_chart(chart_bid_vs_market_price(results), width="stretch", key="overview_bids_vs_market")
 
-        # Regret plot
         if mode != "ilp_theoretical":
             st.markdown("---")
             st.markdown("### Average Regret per Round")
@@ -721,15 +640,11 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Error generating regret plot: {e}")
 
-    # ── Tab 2: Round Inspector (all modes) ────────────────────────────
     with tabs[1]:
         T = len(results)
-        selected_round = st.slider(
-            "Select round", min_value=0, max_value=T - 1, value=0,
-        )
+        selected_round = st.slider("Select round", min_value=0, max_value=T - 1, value=0)
         r = results[selected_round]
 
-        # Build auction table
         rows = []
         agent_ids = sorted(r.all_bids.keys())
         for i, prod in enumerate(PRODUCTS):
@@ -767,13 +682,11 @@ def main() -> None:
             key="round_table",
         )
 
-        # Bid comparison chart
         st.plotly_chart(
             chart_round_bids(results, selected_round),
             width="stretch", key="round_bids",
         )
 
-        # Inventory snapshot after this round
         inv_after = r.inventories_after[0]
         fig_snap = go.Figure()
         fig_snap.add_trace(go.Bar(
@@ -784,7 +697,7 @@ def main() -> None:
             text=[f"{v:.0f}" for v in inv_after],
             textposition="outside",
         ))
-        # Draw elegant discrete threshold lines over each bar
+        # Draw discrete threshold lines over each bar (one vertical tick per product row).
         for i, prod in enumerate(PRODUCTS):
             fig_snap.add_shape(
                 type="line",

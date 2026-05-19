@@ -1,19 +1,4 @@
-"""
-Visualization functions for the auction simulation.
-
-All functions accept the list of RoundResult objects from
-``AuctionSimulation.results`` (or the list returned by ``sim.run()``),
-plus optional metadata, and return a matplotlib Figure.
-
-Usage
------
-    from env.sim import AuctionSimulation
-    from visualization.plots import plot_all
-
-    sim = AuctionSimulation(...)
-    sim.run(n_rounds=150)
-    plot_all(sim.results, our_agent, products=PRODUCTS, show=True)
-"""
+"""Visualization functions for the auction simulation."""
 
 from __future__ import annotations
 
@@ -28,13 +13,8 @@ from matplotlib.axes import Axes
 from agents.base import PRODUCTS as DEFAULT_PRODUCTS, N_PRODUCTS
 
 
-# ── colour palette ──────────────────────────────────────────────────────
-_PALETTE = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]   # muted qualitative
+_PALETTE = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
 
-
-# ════════════════════════════════════════════════════════════════════════
-#  1. Inventory over time
-# ════════════════════════════════════════════════════════════════════════
 
 def plot_inventory_over_time(
     results: list,
@@ -44,20 +24,7 @@ def plot_inventory_over_time(
     ax: Axes | None = None,
     show: bool = False,
 ) -> Figure:
-    """Plot our agent's inventory trajectory for each product.
-
-    Parameters
-    ----------
-    results : list[RoundResult]
-    our_agent_id : int
-    alpha : np.ndarray | None
-        Hard constraint line drawn as a dashed horizontal if provided.
-    products : sequence of str
-    ax : Axes | None
-        If provided, plot into this axes object.
-    show : bool
-        Call plt.show() at the end.
-    """
+    """Plot our agent's inventory trajectory for each product."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(11, 4))
     else:
@@ -84,10 +51,6 @@ def plot_inventory_over_time(
         plt.show()
     return fig
 
-
-# ════════════════════════════════════════════════════════════════════════
-#  2. Cumulative cost over time
-# ════════════════════════════════════════════════════════════════════════
 
 def plot_cumulative_cost(
     results: list,
@@ -128,20 +91,13 @@ def plot_cumulative_cost(
     return fig
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  3. Bid vs winning market price per product
-# ════════════════════════════════════════════════════════════════════════
-
 def plot_bid_vs_market_price(
     results: list,
     our_agent_id: int = 0,
     products: Sequence[str] = DEFAULT_PRODUCTS,
     show: bool = False,
 ) -> Figure:
-    """For each product, plot our bid amount vs the winning market price.
-
-    Only rounds where we placed a bid > 0 for a given product are shown.
-    """
+    """For each product, plot our bid vs the winning market price (rounds where bid > 0)."""
     n = len(products)
     fig, axes = plt.subplots(1, n, figsize=(4 * n, 4), sharey=False)
     if n == 1:
@@ -176,10 +132,6 @@ def plot_bid_vs_market_price(
         plt.show()
     return fig
 
-
-# ════════════════════════════════════════════════════════════════════════
-#  4. Win rate per product (bar chart)
-# ════════════════════════════════════════════════════════════════════════
 
 def plot_win_rate(
     results: list,
@@ -220,24 +172,13 @@ def plot_win_rate(
     return fig
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  5. Lyapunov deficit H_i(t) over time
-# ════════════════════════════════════════════════════════════════════════
-
 def plot_lyapunov_deficit(
     agent_history: list[dict],
     products: Sequence[str] = DEFAULT_PRODUCTS,
     ax: Axes | None = None,
     show: bool = False,
 ) -> Figure:
-    """Plot the Lyapunov deficit H_i(t) = β_i − s_i(t) per product.
-
-    Parameters
-    ----------
-    agent_history : list[dict]
-        The ``agent.history`` list populated by ``BaseAgent.log()``.
-        Each entry must contain ``"t"`` and ``"H"`` keys.
-    """
+    """Plot H_i(t) = β_i − s_i(t) per product. Each history entry needs 't' and 'H' keys."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(11, 4))
     else:
@@ -262,10 +203,6 @@ def plot_lyapunov_deficit(
     return fig
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  6. Combined dashboard
-# ════════════════════════════════════════════════════════════════════════
-
 def plot_all(
     results: list,
     our_agent,
@@ -273,32 +210,13 @@ def plot_all(
     save_path: str | None = None,
     show: bool = True,
 ) -> Figure:
-    """Render a 3×2 dashboard of all plots in a single figure.
-
-    Parameters
-    ----------
-    results : list[RoundResult]
-    our_agent : BaseAgent
-        Used for ``agent.alpha``, ``agent.history``, and ``agent.agent_id``.
-    products : sequence of str
-    save_path : str | None
-        If provided, save figure to this path (e.g. ``"results/run.png"``).
-    show : bool
-        Call plt.show() after rendering.
-
-    Returns
-    -------
-    Figure
-    """
-    n_prod = len(products)
+    """Render a 2×3 dashboard of all plots in a single figure."""
     fig = plt.figure(figsize=(18, 11))
     fig.suptitle("Auction Simulation Dashboard", fontsize=14, fontweight="bold", y=0.98)
 
-    # Row 1: inventory  |  cumulative cost  |  win rate
     ax_inv  = fig.add_subplot(2, 3, 1)
     ax_cost = fig.add_subplot(2, 3, 2)
     ax_win  = fig.add_subplot(2, 3, 3)
-    # Row 2: deficit  |  bid vs market (first product)  |  bid vs market (second product)
     ax_def  = fig.add_subplot(2, 3, 4)
     ax_b0   = fig.add_subplot(2, 3, 5)
     ax_b1   = fig.add_subplot(2, 3, 6)
@@ -311,7 +229,6 @@ def plot_all(
     plot_win_rate(results, our_agent_id=our_agent.agent_id, products=products, ax=ax_win)
     plot_lyapunov_deficit(our_agent.history, products=products, ax=ax_def)
 
-    # Inline bid-vs-market for first two products into the dashboard
     for panel_ax, prod_idx in [(ax_b0, 0), (ax_b1, 1)]:
         T, our_bids, market = [], [], []
         prod = products[prod_idx]
@@ -349,10 +266,6 @@ def plot_all(
     return fig
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  7. ILP Schedule Heatmap + Inventory Trace
-# ════════════════════════════════════════════════════════════════════════
-
 def plot_ilp_schedule(
     x_opt: np.ndarray,
     results: list,
@@ -362,35 +275,7 @@ def plot_ilp_schedule(
     save_path: str | None = None,
     show: bool = False,
 ) -> Figure:
-    """Visualize the ILP optimal purchasing schedule.
-
-    Produces a two-panel figure:
-      - **Top**: Binary heatmap of x_opt (T x N) showing exactly when each
-        product is purchased.
-      - **Bottom**: Per-product inventory trace with alpha reference lines,
-        showing how the optimal schedule maintains the hard constraint.
-
-    Parameters
-    ----------
-    x_opt : np.ndarray, shape (T, N), dtype int
-        Binary decision matrix from ``solve_ilp_offline``.
-    results : list[RoundResult]
-        Simulation results from replaying the ILP schedule.
-    alpha : np.ndarray, shape (N,)
-        Hard minimum inventory constraint per product.
-    products : sequence of str
-        Product names for labelling.
-    our_agent_id : int
-        Agent identifier used to extract inventories from results.
-    save_path : str | None
-        If provided, save figure to this path.
-    show : bool
-        Call ``plt.show()`` after rendering.
-
-    Returns
-    -------
-    Figure
-    """
+    """Two-panel figure: binary purchase heatmap (top) and inventory trace (bottom)."""
     from matplotlib.colors import ListedColormap
 
     T, N = x_opt.shape
@@ -404,7 +289,6 @@ def plot_ilp_schedule(
         fontsize=13, fontweight="bold", y=0.98,
     )
 
-    # ── Top panel: binary purchase heatmap ──────────────────────────────
     cmap = ListedColormap(["#f0f0f0", "#2b8cbe"])
     ax_heat.imshow(
         x_opt.T,
@@ -413,13 +297,9 @@ def plot_ilp_schedule(
         interpolation="nearest",
         extent=[0, T, N - 0.5, -0.5],
     )
-
     ax_heat.set_yticks(range(N))
     ax_heat.set_yticklabels(products[:N], fontsize=9)
-    ax_heat.set_title(
-        "Purchase decisions  (dark = buy, light = skip)",
-        fontsize=10,
-    )
+    ax_heat.set_title("Purchase decisions  (dark = buy, light = skip)", fontsize=10)
 
     # Annotate total buys per product on the right margin.
     for i in range(N):
@@ -428,10 +308,8 @@ def plot_ilp_schedule(
             T + 0.5, i, f"{total_buys}/{T}",
             va="center", ha="left", fontsize=8, color="#333333",
         )
-
     ax_heat.grid(False)
 
-    # ── Bottom panel: inventory trace ───────────────────────────────────
     t_ax = np.arange(T)
     for i, prod in enumerate(products[:N]):
         inv = [r.inventories_after[our_agent_id][i] for r in results]
@@ -465,4 +343,3 @@ def plot_ilp_schedule(
     if show:
         plt.show()
     return fig
-

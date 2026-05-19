@@ -1,21 +1,10 @@
-"""
-Entry point for the inventory-constrained dynamic bidding experiment.
+"""Entry point for the inventory-constrained dynamic bidding experiment.
 
-Usage examples
---------------
-# All-Seeing bandit, 150 rounds, verbose:
+Usage examples:
     python -m scripts.run --mode all_seeing --n_rounds 150 --verbose
-
-# Partially-Blind bandit, custom V:
     python -m scripts.run --mode partially_blind --V 3.0
-
-# With EUROSTAT data (requires data/raw/ TSVs):
     python -m scripts.run --mode all_seeing --use_real_data --country DE
-
-# Override alpha and seed:
     python -m scripts.run --alpha 10 5 10 15 --seed 7
-
-# Save visualisation dashboard:
     python -m scripts.run --n_rounds 150 --plot results/dashboard.png
 """
 
@@ -29,7 +18,6 @@ from pathlib import Path
 
 import numpy as np
 
-# ── project root on sys.path ─────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -46,15 +34,10 @@ from tools.helper_run import (
 )
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  Result-saving utilities
-# ════════════════════════════════════════════════════════════════════════
-
 RESULTS_DIR = Path("results")
 
 
 def _rp(run_dir: Path, stem: str, suffix: str = ".txt") -> Path:
-    """Return ``run_dir/stem+suffix``.  run_dir must already exist."""
     return run_dir / f"{stem}{suffix}"
 
 
@@ -69,23 +52,7 @@ def write_summary(
     init_inv: "np.ndarray",
     products,
 ) -> None:
-    """Write a structured summary file built directly from sim.summary().
-
-    Unlike capturing stdout, this pulls data from the simulation object so
-    the file is always accurate regardless of console verbosity settings.
-
-    Parameters
-    ----------
-    path     : destination Path
-    ts       : run timestamp string
-    run_label: e.g. "All-Seeing" or "Partially-Blind"
-    sim      : completed AuctionSimulation instance
-    args     : parsed argparse.Namespace
-    alpha    : resolved hard inventory minimum (N,)
-    d_max    : resolved per-auction depletion (N,)
-    init_inv : resolved initial inventory (N,)
-    products : sequence of product name strings
-    """
+    """Write a structured summary file built directly from sim.summary()."""
     stats = sim.summary()
     lines = []
     W = 60
@@ -109,7 +76,6 @@ def write_summary(
         "── Resolved Parameters " + "─" * (W - 22),
     ]
 
-    # Per-product table: alpha, d_max, init_inv
     lines.append(
         f"  {'Product':15s}  {'alpha':>12}  {'d_max':>12}  {'init_inv':>12}"
     )
@@ -140,10 +106,6 @@ def write_summary(
     print(f"  [run] Summary saved → {path}")
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  CLI
-# ════════════════════════════════════════════════════════════════════════
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="run.py",
@@ -151,32 +113,18 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # ── scenario ──────────────────────────────────────────────────────
     p.add_argument(
         "--mode",
         choices=["all_seeing", "partially_blind", "ilp", "ilp_theoretical", "ilp_static_plan"],
         default="all_seeing",
         help="Which agent to use. 'ilp' is an alias for 'ilp_static_plan'.",
     )
+    p.add_argument("--n_rounds", type=int, default=150,
+                   help="Number of auction rounds to simulate.")
+    p.add_argument("--V", type=float, default=2.0,
+                   help="Lyapunov trade-off hyperparameter (higher → more cost-conscious).")
     p.add_argument(
-        "--n_rounds",
-        type=int,
-        default=150,
-        help="Number of auction rounds to simulate.",
-    )
-
-    # ── our agent ─────────────────────────────────────────────────────
-    p.add_argument(
-        "--V",
-        type=float,
-        default=2.0,
-        help="Lyapunov trade-off hyperparameter (higher → more cost-conscious).",
-    )
-    p.add_argument(
-        "--a",
-        type=float,
-        default=0.5,
-        metavar="SCALE",
+        "--a", type=float, default=0.5, metavar="SCALE",
         help=(
             "Safety-stock scale factor a ∈ (0, 1]. "
             "Sets alpha = a × mean_qty_per_auction. "
@@ -184,10 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--d_rate",
-        type=float,
-        default=0.5,
-        metavar="RATE",
+        "--d_rate", type=float, default=0.5, metavar="RATE",
         help=(
             "Depletion rate d_rate ∈ (0, 1]. "
             "Sets d_max = d_rate × alpha. "
@@ -196,10 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--alpha",
-        type=float,
-        nargs=N_PRODUCTS,
-        default=None,
+        "--alpha", type=float, nargs=N_PRODUCTS, default=None,
         metavar=("milk", "eggs", "poultry", "beef"),
         help=(
             "Hard minimum inventory constraint per product (tonnes). "
@@ -207,10 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--d_max",
-        type=float,
-        nargs=N_PRODUCTS,
-        default=None,
+        "--d_max", type=float, nargs=N_PRODUCTS, default=None,
         metavar=("milk", "eggs", "poultry", "beef"),
         help=(
             "Max depletion per auction slot per product (tonnes). "
@@ -218,50 +157,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--init_inventory",
-        type=float,
-        nargs=N_PRODUCTS,
-        default=None,
+        "--init_inventory", type=float, nargs=N_PRODUCTS, default=None,
         metavar=("milk", "eggs", "poultry", "beef"),
         help="Initial inventory. Defaults to 2×alpha.",
     )
-
-    # ── competitors ───────────────────────────────────────────────────
     p.add_argument(
-        "--competitors",
-        type=str,
-        default="stochastic,linear,naive",
+        "--competitors", type=str, default="stochastic,linear,naive",
         help=(
             "Comma-separated competitor types. "
             "Choices per entry: stochastic | linear | naive."
         ),
     )
-
-    # ── data source ───────────────────────────────────────────────────
-    p.add_argument(
-        "--use_real_data",
-        action="store_true",
-        help="Use EUROSTAT data as quantity source (requires data/raw/ TSVs).",
-    )
-    p.add_argument(
-        "--country",
-        type=str,
-        default="DE",
-        help="ISO-2 EUROSTAT country code.",
-    )
-    p.add_argument(
-        "--auctions_per_day",
-        type=int,
-        default=1,
-        help="Auction slots per calendar day (used with EUROSTAT data).",
-    )
-
-    # ── output ────────────────────────────────────────────────────────
+    p.add_argument("--use_real_data", action="store_true",
+                   help="Use EUROSTAT data as quantity source (requires data/raw/ TSVs).")
+    p.add_argument("--country", type=str, default="DE",
+                   help="ISO-2 EUROSTAT country code.")
+    p.add_argument("--auctions_per_day", type=int, default=1,
+                   help="Auction slots per calendar day (used with EUROSTAT data).")
     p.add_argument("--seed",    type=int,  default=42,    help="Global random seed.")
     p.add_argument("--verbose", action="store_true",      help="Print per-round output.")
     p.add_argument(
-        "--plot",
-        action="store_true",
+        "--plot", action="store_true",
         help=(
             "Save ALL visualisations to results/{timestamp}/. "
             "Produces: dashboard per agent, regret comparison (with --compare), "
@@ -269,8 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--compare",
-        action="store_true",
+        "--compare", action="store_true",
         help=(
             "Run BOTH All-Seeing and Partially-Blind on the same price sequence "
             "and produce a shared regret comparison plot."
@@ -280,19 +195,13 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-# ════════════════════════════════════════════════════════════════════════
-#  Main
-# ════════════════════════════════════════════════════════════════════════
-
 def main(args: argparse.Namespace) -> None:
     np.random.seed(args.seed)
 
-    # ── timestamp & run directory ──────────────────────────────────────
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = RESULTS_DIR / ts
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── save config JSON ─────────────────────────────────────────────
     config_path = _rp(run_dir, "config", ".json")
     config_dict = vars(args).copy()
     with open(config_path, "w") as f:
@@ -300,7 +209,6 @@ def main(args: argparse.Namespace) -> None:
     print(f"  [run] Results dir   → {run_dir}/")
     print(f"  [run] Timestamp     : {ts}")
 
-    # ── derive alpha / d_max from real data (unless CLI override) ─────
     _FALLBACK_ALPHA = np.array([10.0,  5.0, 10.0, 15.0])
     _FALLBACK_DMAX  = np.array([ 3.0,  2.0,  3.0,  4.0])
 
@@ -332,7 +240,6 @@ def main(args: argparse.Namespace) -> None:
         else alpha + d_max          # = β (Lyapunov soft target), so H_i(0) = 0
     )
 
-    # ── competitors ───────────────────────────────────────────────────
     competitors = build_competitors(args.competitors, alpha, init_inv, args.seed)
     competitor_ids = [c.agent_id for c in competitors]
 
@@ -348,8 +255,6 @@ def main(args: argparse.Namespace) -> None:
     print(f"  Seed         : {args.seed}")
     print("=" * 60)
 
-    # ── our agent(s) ──────────────────────────────────────────────────
-    # In --compare mode we build both and run the sim twice.
     agent_as = AllSeeingBanditAgent(
         agent_id=0,
         alpha=alpha,
@@ -373,21 +278,14 @@ def main(args: argparse.Namespace) -> None:
     elif args.mode == "partially_blind":
         agents_to_run = [("Partially-Blind", agent_pb)]
     elif args.mode in ("ilp", "ilp_static_plan", "ilp_theoretical"):
-        # ILP agent is built after _build_sim is defined (needs pre-roll).
         agents_to_run = []
-
-    # ── pre-generate the price/quantity sequence (shared across both agents) ─
-    # We pre-roll the sim with a dummy agent to collect the environment
-    # trajectory, then replay it deterministically for each agent.
-    # Strategy: store quantities+depletions from a reference run,
-    # then replay using list iterators — same sequence for both agents.
 
     def _make_env_sequences():
         """Build quantity and depletion lists for the full horizon.
 
-        Quantities come from the AuctionDataGenerator (real EUROSTAT auction lots).
-        Products with 0 quantity in the generator (missing EUROSTAT data, e.g. beef)
-        fall back to d_max so the agent always has something to bid on.
+        Quantities come from AuctionDataGenerator (real EUROSTAT auction lots).
+        Products with 0 quantity (missing EUROSTAT data, e.g. beef) fall back
+        to d_max so the agent always has something to bid on.
 
         Depletions are set to d_max — our designed per-slot depletion cap — NOT
         gen.depletion_rates, which are raw EUROSTAT daily production totals in
@@ -406,12 +304,8 @@ def main(args: argparse.Namespace) -> None:
 
                 # Replace 0-quantity entries (missing EUROSTAT products) with d_max
                 # so the agent always has a positive lot to bid on each round.
-                qtys = [
-                    np.where(q > 0, q, d_max)
-                    for q in raw_qtys
-                ]
+                qtys = [np.where(q > 0, q, d_max) for q in raw_qtys]
 
-                # Depletions = d_max * 0.5 per slot.
                 # d_max is the worst-case cap; expected demand is half that,
                 # matching default_depletions used in the synthetic fallback.
                 deps = [(d_max * 0.5).copy() for _ in range(args.n_rounds)]
@@ -423,7 +317,7 @@ def main(args: argparse.Namespace) -> None:
             except Exception as exc:
                 print(f"  [data] WARNING: Could not load real data ({exc}). "
                       "Falling back to synthetic data.")
-        return None, None  # sim generates internally
+        return None, None
 
     pre_qtys, pre_deps = _make_env_sequences()
 
@@ -448,15 +342,13 @@ def main(args: argparse.Namespace) -> None:
             seed=args.seed,
         )
 
-    # ── ILP: pre-roll competitors, solve, build agent ─────────────────
     if args.mode in ("ilp", "ilp_static_plan", "ilp_theoretical"):
         print("  [ilp] Pre-rolling competitors to collect market prices ...")
 
-        # Null agent that never bids (does not influence competitor behaviour).
         from agents.base import BaseAgent as _BaseAgent
 
         class _NullAgent(_BaseAgent):
-            """Agent that never bids.  Used solely for price collection."""
+            """Never bids — used solely for price collection."""
             def bid(self, state):
                 return np.zeros(self.n_products)
 
@@ -471,11 +363,10 @@ def main(args: argparse.Namespace) -> None:
         prices_mat = np.array([
             [r.winning_bids[i] for i in range(N_PRODUCTS)]
             for r in preroll_results
-        ])  # (T, N)
-        qtys_mat = np.array([r.quantities for r in preroll_results])   # (T, N)
-        deps_mat = np.array([r.depletions for r in preroll_results])   # (T, N)
+        ])
+        qtys_mat = np.array([r.quantities for r in preroll_results])
+        deps_mat = np.array([r.depletions for r in preroll_results])
 
-        # Replace zero prices with a nominal epsilon.
         prices_mat = np.where(prices_mat <= 0, 1e-6, prices_mat)
 
         print(f"  [ilp] Collected {args.n_rounds} rounds of market data.")
@@ -495,9 +386,7 @@ def main(args: argparse.Namespace) -> None:
             print(f"    {prod:15s}: {buys:3d}/{args.n_rounds} buys  [{status}]")
         print(f"  [ilp] Optimal total cost: {ilp_cost:,.2f}")
 
-        # Theoretical mode: print the solver output and exit (no replay).
         if args.mode == "ilp_theoretical":
-            # Compute inventory trajectory analytically.
             inv = init_inv.copy()
             for t in range(args.n_rounds):
                 inv = inv + qtys_mat[t] * x_opt[t] - deps_mat[t]
@@ -515,7 +404,6 @@ def main(args: argparse.Namespace) -> None:
             print(f"  [run] All results saved to {run_dir}/")
             return
 
-        # Static plan mode: build agent and proceed to run loop.
         agent_ilp = ILPOracleAgent(
             agent_id=0,
             alpha=alpha,
@@ -527,10 +415,7 @@ def main(args: argparse.Namespace) -> None:
         )
         agents_to_run = [("ILP", agent_ilp)]
 
-    # ════════════════════════════════════════════════════════════════════
-    #  RUN LOOP  — iterate over agent(s)
-    # ════════════════════════════════════════════════════════════════════
-    all_run_results: list[tuple[str, list, object]] = []  # (label, results, agent)
+    all_run_results: list[tuple[str, list, object]] = []
 
     for run_label, our_agent in agents_to_run:
         sim = _build_sim(our_agent)
@@ -546,15 +431,9 @@ def main(args: argparse.Namespace) -> None:
               f"{'inventory (our)':30}  won")
         print("-" * 75)
 
-        # ════════════════════════════════════════════════════════════════
-        #  GAME LOOP  — one iteration = one auction round
-        # ════════════════════════════════════════════════════════════════
         for t in range(args.n_rounds):
-
-            # ── advance simulation by one step ────────────────────────
             r = sim.step()
 
-            # ── per-round: update running stats ───────────────────────
             total_cost += r.our_cost
             win_counts += r.our_won.astype(float)
             bid_counts += (r.all_bids[our_agent.agent_id] > 0).astype(float)
@@ -564,7 +443,6 @@ def main(args: argparse.Namespace) -> None:
             if violated:
                 violations += 1
 
-            # ── per-round: console output ─────────────────────────────
             if args.verbose:
                 won_str   = " ".join(
                     f"{PRODUCTS[i][0].upper()}{'✓' if r.our_won[i] else '✗'}"
@@ -574,18 +452,6 @@ def main(args: argparse.Namespace) -> None:
                 viol_flag = " ⚠" if violated else ""
                 print(f"{t:5d} {r.our_cost:8.2f}  {total_cost:9.2f}  "
                       f"{inv_str}  {won_str}{viol_flag}")
-
-            # ── per-round: add any investigation logic here ───────────
-            # Examples:
-            #   print(r.all_bids)            — every agent's bid vector
-            #   print(r.winners)             — who won each product
-            #   print(r.winning_bids)        — at what price
-            #   print(r.quantities)          — lot sizes this round
-            #   print(our_agent.history[-1]) — our agent's internal log entry
-
-        # ════════════════════════════════════════════════════════════════
-        #  END OF GAME LOOP
-        # ════════════════════════════════════════════════════════════════
 
         safe_bids = np.where(bid_counts > 0, bid_counts, 1.0)
         win_rate  = np.where(bid_counts > 0, win_counts / safe_bids, 0.0)
@@ -620,10 +486,8 @@ def main(args: argparse.Namespace) -> None:
 
         all_run_results.append((run_label, sim.results, our_agent))
 
-        # ── per-agent dashboard (always when --plot) ─────────────────
         if args.plot:
             if isinstance(our_agent, ILPOracleAgent):
-                # ILP-specific: binary heatmap + inventory trace.
                 from visualization.plots import plot_ilp_schedule
                 plot_ilp_schedule(
                     x_opt=our_agent.schedule,
@@ -634,7 +498,6 @@ def main(args: argparse.Namespace) -> None:
                 )
             else:
                 from visualization.plots import plot_all
-                # In compare mode use agent-specific filename; single mode -> dashboard.png
                 dash_name = (
                     f"dashboard_{run_label.lower().replace(' ', '-')}.png"
                     if args.compare else "dashboard.png"
@@ -647,7 +510,6 @@ def main(args: argparse.Namespace) -> None:
                     show=False,
                 )
 
-        # ── structured summary from sim ──────────────────────────────
         summary_path = _rp(run_dir, f"summary_{run_label.lower().replace(' ', '_')}", ".txt")
         write_summary(
             path=summary_path,
@@ -661,7 +523,6 @@ def main(args: argparse.Namespace) -> None:
             products=list(PRODUCTS),
         )
 
-    # ── regret plot (--plot, single or compare mode) ──────────────────
     if args.plot:
         from visualization.regret import (
             compute_oracle_cost, compute_regret, plot_regret_vs_theory,
